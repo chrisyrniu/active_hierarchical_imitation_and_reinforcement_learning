@@ -1,5 +1,5 @@
 # AHIRL in Ant-Maze Environment
-MADDPG implementation in Google Research Football
+Active Hierarchical Imitation and Reinforcement Learning (AHIRL) implementation in Ant-Maze environment.
 
 Please see our [report](https://chrisyrniu.github.io/files/report_ahirl.pdf) of this work.
 
