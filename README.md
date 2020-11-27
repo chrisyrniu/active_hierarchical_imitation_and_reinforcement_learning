@@ -9,13 +9,11 @@ Please see our [report](https://chrisyrniu.github.io/files/report_ahirl.pdf) of 
 ## Run Testing
 `sh run_test.sh`
 
-## Check Training Process and Results
-* Use tensorboardx
-* Use plot_script.py and saved log file:
+## Example Command of Training
+`python initialize_AHIRL.py --expnum 0 --show --train --active_learning`
 
-`python plot_script.py saved/ name Reward`
-
-`python plot_script.py saved/ name Steps-Taken`
+## Example Command of Testing
+`python initialize_AHIRL.py --expnum 0 --show --test`
 
 ## Acknowledgement
 This repository is revised based on [Hierarchial Actor-Critic](https://github.com/andrew-j-levy/Hierarchical-Actor-Critc-HAC-)
