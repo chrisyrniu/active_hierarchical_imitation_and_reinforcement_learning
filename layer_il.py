@@ -318,15 +318,21 @@ class Layer_IL():
             #         for k in range 
 
             rewards = np.array(rewards)
-            returns = np.empty_like(rewards)
+            returns = [0] * rewards.size
             mask = np.array(mask)
             prev_return = 0
 
             for i in reversed(range(rewards.size)):
                 returns[i] = rewards[i] + self.gamma * prev_return * mask[i]
+                print('return', returns[i])
+                print('reward', rewards[i])
+                print('mask', mask[i])
+                print('prev_return', prev_return)
+                prev_return = np.copy(returns[i])
 
-                prev_return = returns[i]
-
+            print('rewards', rewards)
+            print('mask', mask)
+            print('returns', returns)
             next_batch_size = min(self.replay_buffer.size, self.replay_buffer.batch_size)
 
             feed_dict = {

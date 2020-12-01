@@ -20,6 +20,8 @@ def run_AHIRL(FLAGS,env,agent):
 
     # Determine training mode.  If not testing and not solely training, interleave training and testing to track progress
     mix_train_test = False
+    print('FLAGS.test', FLAGS.test)
+    print('FLAGS.train_only', FLAGS.train_only)
     if not FLAGS.test and not FLAGS.train_only:
         mix_train_test = True
 
