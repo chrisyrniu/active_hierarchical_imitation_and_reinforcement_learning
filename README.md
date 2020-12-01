@@ -10,7 +10,7 @@ Please see our [report](https://chrisyrniu.github.io/files/report_ahirl.pdf) of 
 `sh run_test.sh`
 
 ## Example Command of Training
-`python initialize_AHIRL.py --expnum 0 --show --train --active_learning`
+`python initialize_AHIRL.py --expnum 0 --show --train_only --active_learning`
 
 ## Example Command of Testing
 `python initialize_AHIRL.py --expnum 0 --show --test`
