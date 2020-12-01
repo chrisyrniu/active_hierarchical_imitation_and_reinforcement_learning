@@ -3,6 +3,8 @@ from experience_buffer import ExperienceBuffer
 import tensorflow as tf
 from utils import layer
 from time import sleep
+import tensorflow_probability as tfp
+
 
 class Layer_IL():
     def __init__(self, layer_number, FLAGS, env, sess, agent_params):
@@ -20,10 +22,10 @@ class Layer_IL():
         ##@@
         self.current_state = None
         self.goal = None
-        self.beta = 1.0
+        self.beta = 1.00
         self.state_dim = env.state_dim
         self.goal_dim = env.end_goal_dim
-        self.enc_dim = 32
+        self.gamma = 0.98
         self.action_space_size = env.subgoal_dim
         self.action_space_bounds = env.subgoal_bounds_symmetric
         print(self.action_space_bounds)
@@ -58,30 +60,30 @@ class Layer_IL():
         # Create buffer to store not yet finalized goal replay transitions
         self.temp_goal_replay_storage = []
 
+        self.num_trajs = FLAGS.num_trajs
+
         ##@@
         self.state_ph = tf.placeholder(tf.float32, shape=(None, self.state_dim))
         self.goal_ph = tf.placeholder(tf.float32, shape=(None, self.goal_dim))
         # self.enc_ph = tf.placeholder(tf.float32, shape=(None, self.enc_dim))
         self.features_ph = tf.concat([self.state_ph, self.goal_ph], axis=1)
         self.batch_size = tf.placeholder(tf.float32)
-        self.infer = self.create_nn(self.features_ph, name="layer_hi")
-        self.loss = tf.losses.mean_squared_error(self.infer, self.action_ph)
+
+        # Gaussian Policy
+        self.mean = self.create_nn(self.features_ph, name="layer_hi")
+        self.logstd = tf.Variable(tf.zeros(self.action_space_size), name='logstd')
+        self.sample_ac = self.mean + tf.exp(self.logstd) * tf.random_normal(tf.shape(self.mean), 0, 1)
+
+        self.logprob_n = tfp.distributions.MultivariateNormalDiag(
+            loc=self.mean, scale_diag=tf.exp(self.logstd)).log_prob(self.action_ph)
+
+        self.rwd_n = tf.placeholder(tf.float32, shape=[None])
+        self.steps = tf.placeholder(tf.float32, shape=None)
+
+        self.loss = tf.reduce_sum(-tf.exp(self.logprob_n - tf.stop_gradient(self.logprob_n)) * self.rwd_n)/self.steps
         self.train_fn = tf.train.AdamOptimizer(0.001).minimize(self.loss)
         ##@@
 
-        if self.FLAGS.active_learning == 2:
-            self.infer1 = self.create_nn1(self.features_ph, name="layer_hi1")
-            self.infer2= self.create_nn2(self.features_ph, name="layer_hi2")
-            self.infer3 = self.create_nn3(self.features_ph, name="layer_hi3")
-            self.infer4 = self.create_nn4(self.features_ph, name="layer_hi4")
-            self.loss1 = tf.losses.mean_squared_error(self.infer1, self.action_ph)
-            self.loss2 = tf.losses.mean_squared_error(self.infer2, self.action_ph)
-            self.loss3 = tf.losses.mean_squared_error(self.infer3, self.action_ph)
-            self.loss4 = tf.losses.mean_squared_error(self.infer4, self.action_ph)
-            self.train_fn1 = tf.train.AdamOptimizer(0.001).minimize(self.loss1)
-            self.train_fn2 = tf.train.AdamOptimizer(0.001).minimize(self.loss2)
-            self.train_fn3 = tf.train.AdamOptimizer(0.001).minimize(self.loss3)
-            self.train_fn4 = tf.train.AdamOptimizer(0.001).minimize(self.loss4)
 
         # Parameter determines degree of noise added to actions during training
         # self.noise_perc = noise_perc
@@ -154,10 +156,6 @@ class Layer_IL():
             vel = pos[:2]-prev
             vel = 2*vel/np.linalg.norm(vel)
             expert_action = np.concatenate((pos,vel))
-            transition = [self.current_state, expert_action, 0, None, self.goal, False, agent.enc]
-            ## ??? What should we add for reward, next_state and finished
-            self.replay_buffer.add(np.copy(transition))
-            print("HL replay buffer size: ", self.replay_buffer.size)
         if not self.FLAGS.test and np.random.random_sample() < self.beta:
             assert(not self.FLAGS.test)
             action = expert_action
@@ -169,7 +167,7 @@ class Layer_IL():
                 self.state_ph: _cur_state,
                 self.goal_ph: _goal
             }
-            action = self.sess.run(self.infer, feed_dict=feed_dict)
+            action = self.sess.run(self.sample_ac, feed_dict=feed_dict)
             action = action[0]
             policy_type = "Policy"
 
@@ -235,6 +233,15 @@ class Layer_IL():
 
                 goal_status, max_lay_achieved = agent.layers[self.layer_number - 1].train(agent, env, next_subgoal_test, episode_num)
 
+            if goal_status[self.layer_number]:
+                reward = 1
+                finished = True
+            else:
+                reward = 0
+                finished = False
+
+            # print("HL replay buffer size: ", self.replay_buffer.size)
+
             if self.FLAGS.show:
                 if agent.worker.reset:
                     return None, None
@@ -263,6 +270,14 @@ class Layer_IL():
                 else:
                     hindsight_action = env.project_state_to_subgoal(env.sim, agent.current_state)
 
+            if (max_lay_achieved is not None and max_lay_achieved >= self.layer_number) or agent.steps_taken >= env.max_actions or attempts_made >= self.time_limit:
+                info = 0
+            else:
+                info = 1
+
+            transition = [self.current_state, action, reward, None, self.goal, finished, info]
+            self.replay_buffer.add(np.copy(transition))
+
             # Update state of current layer
             self.current_state = agent.current_state
 
@@ -287,38 +302,49 @@ class Layer_IL():
     # Update networks
     def learn(self, num_updates):
         loss = None
-        if self.FLAGS.active_learning == 2:
-            loss1 = None
-            loss2 = None
-            loss3 = None
-            loss4 = None
 
-        if self.replay_buffer.size > 32:
-            for _ in range(num_updates):
-            # Update weights of non-target networks
-                old_states, actions, rewards, new_states, goals, is_terminals, enc = self.replay_buffer.get_batch_with_enc()
+        for _ in range(num_updates):
+        # Update weights of non-target networks
+            steps = self.replay_buffer.size
+            old_states, actions, rewards, new_states, goals, is_terminals, mask = self.replay_buffer.get_all()
 
-                next_batch_size = min(self.replay_buffer.size, self.replay_buffer.batch_size)
+            # indices = [i for i, x in enumerate(infos) if x == 1]
+            # indices += 1
 
-                feed_dict = {
-                    self.state_ph: old_states,
-                    self.goal_ph: goals,
-                    # self.enc_ph: enc,
-                    self.action_ph: actions,
-                    self.batch_size: next_batch_size # ??
-                }
-                _,loss = self.sess.run([self.train_fn,self.loss],feed_dict=feed_dict)
-                if self.FLAGS.active_learning == 2:
-                    _,loss1 = self.sess.run([self.train_fn1,self.loss1],feed_dict=feed_dict)
-                    _,loss2 = self.sess.run([self.train_fn2,self.loss2],feed_dict=feed_dict)
-                    _,loss3 = self.sess.run([self.train_fn3,self.loss3],feed_dict=feed_dict)
-                    _,loss4 = self.sess.run([self.train_fn4,self.loss4],feed_dict=feed_dict)
-            print('Loss: ', loss)
-            self.beta /= 1.05
-            print("New beta: ", self.beta)
+            # returns = []
+            # prev_idx = -1
+            # for idx in indices:
+            #     for j in range(prev_idx+1, idx+1):
+            #         for k in range 
+
+            rewards = np.array(rewards)
+            returns = np.empty_like(rewards)
+            mask = np.array(mask)
+            prev_return = 0
+
+            for i in reversed(range(rewards.size)):
+                returns[i] = rewards[i] + self.gamma * prev_return * mask[i]
+
+                prev_return = returns[i]
+
+            next_batch_size = min(self.replay_buffer.size, self.replay_buffer.batch_size)
+
+            feed_dict = {
+                self.state_ph: old_states,
+                self.goal_ph: goals,
+                self.rwd_n: returns,
+                self.action_ph: actions,
+                self.steps: steps
+            }
+            _,loss = self.sess.run([self.train_fn,self.loss],feed_dict=feed_dict)
+
+        print('Loss: ', loss)
+        self.beta /= 1.03
+        print("New beta: ", self.beta)
+
 
     def create_nn(self, features, name=None):
-
+        
         if name is None:
             name = self.actor_name
 
@@ -335,74 +361,4 @@ class Layer_IL():
 
         return output
 
-    def create_nn1(self, features, name=None):
 
-        if name is None:
-            name = self.actor_name
-
-        with tf.variable_scope(name + '_fc_1'):
-            fc1 = layer(features, 32)
-        with tf.variable_scope(name + '_fc_2'):
-            fc2 = layer(fc1, 32)
-        with tf.variable_scope(name + '_fc_3'):
-            fc3 = layer(fc2, 32)
-        with tf.variable_scope(name + '_fc_4'):
-            fc4 = layer(fc3, self.action_space_size, is_output=True)
-
-        output = tf.tanh(fc4) * self.action_space_bounds + self.action_offset
-
-        return output
-
-    def create_nn2(self, features, name=None):
-
-        if name is None:
-            name = self.actor_name
-
-        with tf.variable_scope(name + '_fc_1'):
-            fc1 = layer(features, 128)
-        with tf.variable_scope(name + '_fc_2'):
-            fc2 = layer(fc1, 128)
-        with tf.variable_scope(name + '_fc_3'):
-            fc3 = layer(fc2, 128)
-        with tf.variable_scope(name + '_fc_4'):
-            fc4 = layer(fc3, self.action_space_size, is_output=True)
-
-        output = tf.tanh(fc4) * self.action_space_bounds + self.action_offset
-
-        return output
-
-    def create_nn3(self, features, name=None):
-
-        if name is None:
-            name = self.actor_name
-
-        with tf.variable_scope(name + '_fc_1'):
-            fc1 = layer(features, 64)
-        with tf.variable_scope(name + '_fc_2'):
-            fc2 = layer(fc1, 64)
-        with tf.variable_scope(name + '_fc_3'):
-            fc3 = layer(fc2, 64)
-        with tf.variable_scope(name + '_fc_4'):
-            fc4 = layer(fc3, self.action_space_size, is_output=True)
-
-        output = tf.sigmoid(fc4) * self.action_space_bounds + self.action_offset
-
-        return output            
-
-    def create_nn4(self, features, name=None):
-
-        if name is None:
-            name = self.actor_name
-
-        with tf.variable_scope(name + '_fc_1'):
-            fc1 = layer(features, 128)
-        with tf.variable_scope(name + '_fc_2'):
-            fc2 = layer(fc1, 128)
-        with tf.variable_scope(name + '_fc_3'):
-            fc3 = layer(fc2, 128)
-        with tf.variable_scope(name + '_fc_4'):
-            fc4 = layer(fc3, self.action_space_size, is_output=True)
-
-        output = tf.sigmoid(fc4) * self.action_space_bounds + self.action_offset
-
-        return output

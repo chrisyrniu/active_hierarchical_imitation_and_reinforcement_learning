@@ -21,21 +21,6 @@ class ExperienceBuffer():
             self.experiences = self.experiences[beg_index:]
             self.size -= beg_index
 
-    def get_batch_with_enc(self):
-        states, actions, rewards, new_states, goals, is_terminals, enc = [], [], [], [], [], [], []
-        dist = np.random.randint(0, high=self.size, size=min(self.size, self.batch_size))
-
-        for i in dist:
-            states.append(self.experiences[i][0])
-            actions.append(self.experiences[i][1])
-            rewards.append(self.experiences[i][2])
-            new_states.append(self.experiences[i][3])
-            goals.append(self.experiences[i][4])
-            is_terminals.append(self.experiences[i][5])
-            enc.append(self.experiences[i][6])
-
-        return states, actions, rewards, new_states, goals, is_terminals, enc
-
     def get_batch(self):
         states, actions, rewards, new_states, goals, is_terminals = [], [], [], [], [], []
         dist = np.random.randint(0, high=self.size, size=min(self.size, self.batch_size))
@@ -49,3 +34,20 @@ class ExperienceBuffer():
             is_terminals.append(self.experiences[i][5])
 
         return states, actions, rewards, new_states, goals, is_terminals
+
+    def get_all(self):
+        states, actions, rewards, new_states, goals, is_terminals, infos = [], [], [], [], [], [], []
+
+        for i in range(self.size):
+            states.append(self.experiences[i][0])
+            actions.append(self.experiences[i][1])
+            rewards.append(self.experiences[i][2])
+            new_states.append(self.experiences[i][3])
+            goals.append(self.experiences[i][4])
+            is_terminals.append(self.experiences[i][5])    
+            infos.append(self.experiences[i][6])
+
+        self.size = 0
+        self.experiences = []
+
+        return states, actions, rewards, new_states, goals, is_terminals, infos

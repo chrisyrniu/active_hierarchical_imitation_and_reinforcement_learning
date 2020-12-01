@@ -122,6 +122,13 @@ def parse_options():
         # if al_test == 2: multi-policy active learning
     )  
 
+    parser.add_argument(
+        '--num_trajs',
+        type=int,
+        default=3,
+        help='Number of trajectories per update'
+    )  
+
     FLAGS, unparsed = parser.parse_known_args()
 
 

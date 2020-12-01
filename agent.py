@@ -34,6 +34,7 @@ class Agent():
         self.model_dir = None
         self.model_names = None
         self.attempts = 0
+        self.num_trajs = FLAGS.num_trajs
 
         # Initialize actor/critic networks.  Load saved parameters if not retraining
 
@@ -52,7 +53,7 @@ class Agent():
         self.steps_taken = 0
 
         # Below hyperparameter specifies number of Q-value updates made after each episode
-        self.num_updates = 400
+        self.num_updates = 1
 
         # Below parameters will be used to store performance results
         self.performance_log = []
@@ -243,7 +244,7 @@ class Agent():
                 return None
 
         # Update networks if not testing
-        if not self.FLAGS.test and total_episodes >= 10 and total_episodes % 5 == 0:
+        if not self.FLAGS.test and (total_episodes+1) % self.num_trajs == 0:
             self.learn()
 
         # Return whether end goal was achieved
