@@ -3,14 +3,8 @@ Active Hierarchical Imitation and Reinforcement Learning (AHIRL) implementation 
 
 Please see our [report](https://chrisyrniu.github.io/files/report_ahirl.pdf) of this work.
 
-## Run Training
-`sh run_train.sh`
-
-## Run Testing
-`sh run_test.sh`
-
 ## Example Command of Training
-`python initialize_AHIRL.py --expnum 0 --show --train --active_learning`
+`python initialize_AHIRL.py --expnum 0 --show --train --active_learning 0`
 
 ## Example Command of Testing
 `python initialize_AHIRL.py --expnum 0 --show --test`
