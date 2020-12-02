@@ -145,6 +145,7 @@ class Layer_IL():
         action = None
         policy_type = None
         prev = self.current_state[:2]
+        expert_action = None
         if not self.FLAGS.test:
             pos = np.array([0.53]*3)
             if first:
@@ -154,10 +155,6 @@ class Layer_IL():
             vel = pos[:2]-prev
             vel = 2*vel/np.linalg.norm(vel)
             expert_action = np.concatenate((pos,vel))
-            transition = [self.current_state, expert_action, 0, None, self.goal, False, agent.enc]
-            ## ??? What should we add for reward, next_state and finished
-            self.replay_buffer.add(np.copy(transition))
-            print("HL replay buffer size: ", self.replay_buffer.size)
         if not self.FLAGS.test and np.random.random_sample() < self.beta:
             assert(not self.FLAGS.test)
             action = expert_action
@@ -173,7 +170,7 @@ class Layer_IL():
             action = action[0]
             policy_type = "Policy"
 
-        return action, policy_type, subgoal_test
+        return action, policy_type, subgoal_test, expert_action
 
 
     # Determine whether layer is finished training
@@ -226,7 +223,7 @@ class Layer_IL():
         while True:
 
             # Select action to achieve goal state using epsilon-greedy policy or greedy policy if in test mode
-            action, action_type, next_subgoal_test = self.choose_action(agent, env, subgoal_test, attempts_made==0)
+            action, action_type, next_subgoal_test, expert_action = self.choose_action(agent, env, subgoal_test, attempts_made==0)
 
             # If next layer is not bottom level, propose subgoal for next layer to achieve and determine whether that subgoal should be tested
             if self.layer_number > 0:
@@ -234,6 +231,13 @@ class Layer_IL():
                 agent.goal_array[self.layer_number - 1] = action
 
                 goal_status, max_lay_achieved = agent.layers[self.layer_number - 1].train(agent, env, next_subgoal_test, episode_num)
+
+            if goal_status[self.layer_number]:
+                reward = 1
+                finished = True
+            else:
+                reward = 0
+                finished = False
 
             if self.FLAGS.show:
                 if agent.worker.reset:
@@ -262,6 +266,19 @@ class Layer_IL():
                 # Otherwise, use subgoal that was achieved in hindsight
                 else:
                     hindsight_action = env.project_state_to_subgoal(env.sim, agent.current_state)
+
+
+            if (max_lay_achieved is not None and max_lay_achieved >= self.layer_number) or agent.steps_taken >= env.max_actions or attempts_made >= self.time_limit:
+                info = 0
+            else:
+                info = 1
+
+            transition = [self.current_state, expert_action, reward, None, self.goal, finished, info]
+            self.replay_buffer.add(np.copy(transition))
+
+            if info == 0 and reward == 0:
+                self.replay_buffer.clear(length=attempts_made)
+
 
             # Update state of current layer
             self.current_state = agent.current_state

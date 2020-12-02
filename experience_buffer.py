@@ -49,3 +49,10 @@ class ExperienceBuffer():
             is_terminals.append(self.experiences[i][5])
 
         return states, actions, rewards, new_states, goals, is_terminals
+
+    def clear(self, length):
+        for i in reversed(range(length)):
+            if np.random.random_sample() < 1-np.exp(-i):
+                self.experiences.pop()
+
+
