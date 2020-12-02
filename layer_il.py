@@ -331,7 +331,7 @@ class Layer_IL():
                     _,loss3 = self.sess.run([self.train_fn3,self.loss3],feed_dict=feed_dict)
                     _,loss4 = self.sess.run([self.train_fn4,self.loss4],feed_dict=feed_dict)
             print('Loss: ', loss)
-            self.beta /= 1.05
+            self.beta /= 1.025
             print("New beta: ", self.beta)
 
     def create_nn(self, features, name=None):

@@ -54,5 +54,6 @@ class ExperienceBuffer():
         for i in reversed(range(length)):
             if np.random.random_sample() < 1-np.exp(-i):
                 self.experiences.pop()
+                self.size -= 1
 
 
