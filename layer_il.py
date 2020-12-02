@@ -276,8 +276,9 @@ class Layer_IL():
             transition = [self.current_state, expert_action, reward, None, self.goal, finished, info]
             self.replay_buffer.add(np.copy(transition))
 
-            if info == 0 and reward == 0:
-                self.replay_buffer.clear(length=attempts_made)
+            if not self.FLAGS.test:
+                if info == 0 and reward == 0:
+                    self.replay_buffer.clear(length=attempts_made)
 
 
             # Update state of current layer
